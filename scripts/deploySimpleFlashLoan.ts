@@ -1,9 +1,6 @@
-import hre from "hardhat";
-import ethers from "hardhat";
 import { network } from "hardhat";
-import { networkInterfaces } from "os";
 import * as dotenv from "dotenv";
-import { Address, parseEther, parseAbi, formatEther, encodeAbiParameters, parseAbiParameters } from "viem";
+import { Address, parseEther, formatEther, encodeAbiParameters, parseAbiParameters } from "viem";
 
 // Import file .env
 dotenv.config();
@@ -29,7 +26,7 @@ async function main() {
     const aavaePoolAddressesProvider = process.env.AAVE_POOL_ADDRESSES_PROVIDER_SEPOLIA;
     const tokenAddressRequested = process.env.WETH_TOKEN_SEPOLIA;
     const tokenNameRequested = "WETH"
-    const requestedAmount = 0.5 // Cantidad del flash loan que se pide
+    const requestedAmount = 0.01 // Cantidad del flash loan que se pide (reduced for testing with minimal liquidity)
 
     // Obtener saldo de la cuenta. El saldo sera de ETH ya que Sepolia es una testnet de Etherum
     const weiBalance = await publicClient.getBalance({
@@ -49,12 +46,15 @@ async function main() {
 
     const { contract: simpleFlashLoan, deploymentTransaction: simpleFlashLoanTransaction } = await viem.sendDeploymentTransaction("SimpleFlashLoan", [aavaePoolAddressesProvider as Address]);
 
+    console.log("📤 Deployment transaction sent:", simpleFlashLoanTransaction.hash);
+    console.log("⏳ Waiting for confirmation...");
+
     // Esperar a que se añada a la Blockchain para obtener el recibo
     const simpleFlashLoanReceipt = await publicClient.waitForTransactionReceipt({ 
         hash: simpleFlashLoanTransaction.hash,
         // El contrato pudo haberse añadido a la red pero viem aun no haberse actualizado
-        retryCount: 5,
-        retryDelay: 1000 // 1 sec
+        retryCount: 30, // Increased retry count for network delays
+        retryDelay: 2000 // 2 seconds between retries
     });
 
     console.log("✅ SimpleFlashLoan contract deployed on address:", simpleFlashLoan.address);
@@ -72,12 +72,11 @@ async function main() {
     console.log("ℹ️ Amount requested:", requestedAmount.toString(), tokenNameRequested)
     console.log("ℹ️ Premium (fee for the flash loan) required:", formatEther(premium), tokenNameRequested, "(approximately)");
 
-    /// El ABI actúa como una interfaz que informa al código JavaScript sobre las funciones disponibles en la blockchain y define cómo interactuar con ellas
-    const wethAbi = parseAbi([
-        'function deposit() payable', // Para convertir ETH -> WETH
-        'function transfer(address to, uint256 amount) returns (bool)', // Para enviar
-        'function balanceOf(address owner) view returns (uint256)' //
-    ]);
+    const wethAbi = [
+        { inputs: [], name: 'deposit', outputs: [], stateMutability: 'payable', type: 'function' },
+        { inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'transfer', outputs: [{ name: '', type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
+        { inputs: [{ name: 'owner', type: 'address' }], name: 'balanceOf', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+    ] as const;
 
     // Transformar parte de los ETH a WETH
     console.log(line);
@@ -145,14 +144,47 @@ async function main() {
     console.log("ℹ️ Requesting the flash loan");
 
     // Parametros necesarios para realizar el intercambio
+    // Now supports multiple DEX types: Uniswap V2 (0) and 0x Protocol (1)
+    
+    // Option to skip profitability check (for demonstration purposes)
+    // Set to true to execute swaps even if not profitable (showcases the full flow)
+    const skipProfitabilityCheck = process.env.SKIP_PROFITABILITY_CHECK === "true" || false;
+    
+    // Source DEX: Uniswap V2 (use router from .env - Sepolia router)
     const sourceRouter = process.env.UNISWAP_ROUTER_SEPOLIA;
-    const destRouter = process.env.SUSHISWAP_ROUTER_SEPOLIA;
-    const tokenToConvert = process.env.DAI_TOKEN_SEPOLIA;
+    if (!sourceRouter) {
+        throw new Error("UNISWAP_ROUTER_SEPOLIA not set in .env");
+    }
+    const sourceDEXType = 0; // 0 = Uniswap V2
+    
+    // Destination DEX: Use same Uniswap router for now (0x might not have liquidity)
+    // For testing with liquidity we just added, use Uniswap for both
+    const destRouter = sourceRouter; // Use same router
+    const destDEXType = 0; // 0 = Uniswap V2
+    
+    console.log("📊 Using DEXs for arbitrage:");
+    console.log("   Source DEX: Uniswap V2 (" + sourceRouter + ")");
+    console.log("   Dest DEX: Uniswap V2 (" + destRouter + ")");
+    if (skipProfitabilityCheck) {
+        console.log("   ⚠️  Profitability check: DISABLED (swaps will execute regardless)");
+    } else {
+        console.log("   ✅ Profitability check: ENABLED (swaps only if profitable)");
+    }
+    
+    // Using USDC instead of DAI because USDC has liquidity on Sepolia
+    const tokenToConvert = process.env.USDC_TOKEN_SEPOLIA || process.env.DAI_TOKEN_SEPOLIA;
 
-    // Codificar los parametros
+    // Codificar los parametros: sourceRouter, sourceDEXType, destRouter, destDEXType, tokenToConvert, skipProfitabilityCheck
     const encodedParams = encodeAbiParameters(
-        parseAbiParameters("address, address, address"),
-        [sourceRouter as Address, destRouter as Address, tokenToConvert as Address]
+        parseAbiParameters("address, uint8, address, uint8, address, bool"),
+        [
+            sourceRouter as Address, 
+            sourceDEXType,
+            destRouter as Address, 
+            destDEXType,
+            tokenToConvert as Address,
+            skipProfitabilityCheck
+        ]
     );
 
     const requestFlashLoanHash = await simpleFlashLoan.write.requestFlashLoan([
