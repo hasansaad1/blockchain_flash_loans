@@ -19,7 +19,7 @@
 # Hardhat coverage reports
 /coverage
 
-# Pirvates keys, etc
+# Private keys, etc
 .env
 
 # VSCode extensions
