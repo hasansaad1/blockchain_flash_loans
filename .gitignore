@@ -20,7 +20,7 @@
 /coverage
 
 # Pirvates keys, etc
-# .env
+.env
 
 # VSCode extensions
 .vscode
