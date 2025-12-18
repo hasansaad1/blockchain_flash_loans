@@ -1,0 +1,23 @@
+{
+  "name": "hardhat_demo",
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "^3.0.6",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.1",
+    "@types/node": "^22.19.1",
+    "forge-std": "github:foundry-rs/forge-std#v1.11.0",
+    "hardhat": "^3.0.17",
+    "typescript": "~5.8.0",
+    "viem": "^2.41.2"
+  },
+  "dependencies": {
+    "@aave/core-v3": "^1.19.3",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@uniswap/v2-periphery": "^1.1.0-beta.0",
+    "aave": "^0.0.1-security",
+    "dotenv": "^17.2.3",
+    "ganache": "^6.4.5",
+    "web3": "^4.16.0"
+  }
+}
